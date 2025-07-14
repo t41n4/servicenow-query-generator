@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow Encoded Query Generator (Refined) - Go to Target Table
 // @namespace    http://tampermonkey.net/
-// @version      1.14 // Increased version number for UI improvements on operator/value inputs
+// @version      1.16 // Increased version number for group.name change
 // @description  Generate ServiceNow encoded queries with per-element control, bulk input (now persistent across extracts), and direct navigation to the target table.
 // @author       Gemini
 // @match        https://aiadev.service-now.com/sys_dictionary_list*
@@ -439,7 +439,7 @@
 
         // Auto-populate operator based on type and reference
         if (elementData.type === 'Reference' && elementData.reference === 'Group') {
-            operatorSelect.value = '=';
+            operatorSelect.value = 'LIKE'; // Set to LIKE for Reference Type = Group
         } else {
             operatorSelect.value = 'LIKE'; // Default operator
         }
@@ -453,7 +453,18 @@
         keywordsTextarea.rows = 1;
         keywordsTextarea.addEventListener('input', autoResizeTextarea);
 
+        const clearKeywordBtn = document.createElement('button');
+        clearKeywordBtn.textContent = 'x'; // Small 'x' for clearing individual keyword input
+        clearKeywordBtn.classList.add('clear-keyword-btn');
+        clearKeywordBtn.title = `Clear keywords for ${elementData.element}`;
+        clearKeywordBtn.addEventListener('click', () => {
+            keywordsTextarea.value = '';
+            autoResizeTextarea({ target: keywordsTextarea });
+        });
+
         keywordInputWrapper.appendChild(keywordsTextarea);
+        keywordInputWrapper.appendChild(clearKeywordBtn);
+
 
         const removeBtn = document.createElement('button');
         removeBtn.textContent = 'X';
@@ -468,6 +479,8 @@
 
         const newRowData = {
             element: elementData.element, // Store the element name
+            originalType: elementData.type, // Store original type
+            originalReference: elementData.reference, // Store original reference
             operatorSelect: operatorSelect,
             keywordsTextarea: keywordsTextarea,
             domElement: rowDiv // Store reference to the DOM element for removal
@@ -491,12 +504,17 @@
         const mainConjunction = document.getElementById('mainConjunctionSelect').value;
 
         dynamicQueryRows.forEach(rowData => {
-            const element = rowData.element.trim();
+            let elementFieldName = rowData.element.trim(); // Start with the original element name
             const operator = rowData.operatorSelect.value;
             const keywordsRaw = rowData.keywordsTextarea.value.trim();
 
-            if (!element || !keywordsRaw) {
-                return; // Skip if element or keywords are empty
+            // Check if this element is a Reference to Group and adjust field name for the query
+            if (rowData.originalType === 'Reference' && rowData.originalReference === 'Group') {
+                elementFieldName = `${elementFieldName}.name`; // Append '.name' to the original element name
+            }
+
+            if (!elementFieldName || !keywordsRaw) {
+                return; // Skip if element field name or keywords are empty
             }
 
             const keywords = keywordsRaw.split(/[\n,]+/).map(item => item.trim()).filter(item => item !== '');
@@ -506,7 +524,7 @@
             }
 
             // Construct sub-query for this element and its keywords
-            const subQueryConditions = keywords.map(keyword => `${element}${operator}${keyword}`);
+            const subQueryConditions = keywords.map(keyword => `${elementFieldName}${operator}${keyword}`);
             // Join keywords for this specific element with ^OR
             allQueryParts.push(subQueryConditions.join('^OR'));
         });
