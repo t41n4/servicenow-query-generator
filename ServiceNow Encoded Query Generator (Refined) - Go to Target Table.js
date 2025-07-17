@@ -523,6 +523,11 @@
         }
         addKeywordConditionRow(elementData) {
             const container = document.getElementById('elementKeywordPairsContainer');
+            // Remove placeholder if present
+            const placeholder = container.querySelector('p');
+            if (placeholder) {
+                container.removeChild(placeholder);
+            }
             const rowDiv = document.createElement('div');
             rowDiv.classList.add('element-keyword-row');
             const elementLabel = document.createElement('span');
@@ -570,6 +575,10 @@
                 const index = this.state.dynamicQueryRows.indexOf(newRowData);
                 if (index > -1) {
                     this.state.dynamicQueryRows.splice(index, 1);
+                }
+                // If no rows left, show placeholder
+                if (this.state.dynamicQueryRows.length === 0) {
+                    container.innerHTML = `<p style="text-align: center; color: #777;">Click \"Extract Elements from List\" to populate.</p>`;
                 }
             });
         }
@@ -699,11 +708,20 @@
             const rows = document.querySelectorAll('tbody.list2_body tr.list_row');
             rows.forEach((row, idx) => {
                 if (row.querySelector('.add-to-query-builder-btn')) return;
+                let firstCell = row.querySelector('td');
+                if (firstCell) {
+                    const btnCell = document.createElement('td');
+                    btnCell.className = 'vt custom-action-button';
+                    btnCell.style.verticalAlign = 'middle';
+                    btnCell.style.textAlign = 'center';
+                    row.insertBefore(btnCell, firstCell);
+                }
+                // Now map data after button cell is inserted, so mapRowToDataObject skips the button cell
                 const data = mapRowToDataObject(row, headerMap);
                 if (!data.element) return;
                 if (this.state.dynamicQueryRows.some(row => row.element === data.element)) return;
                 const btn = document.createElement('button');
-                btn.textContent = 'Add to Query Builder';
+                btn.textContent = 'Add Query';
                 btn.className = 'add-to-query-builder-btn';
                 btn.style.background = '#27ae60';
                 btn.style.color = 'white';
@@ -719,12 +737,10 @@
                     if (this.state.dynamicQueryRows.some(row => row.element === data.element)) return;
                     this.addKeywordConditionRow(data);
                 });
-                let firstCell = row.querySelector('td');
-                if (firstCell) {
-                    const btnCell = document.createElement('td');
+                // Add the button to the cell (after mapping)
+                const btnCell = row.querySelector('td.custom-action-button');
+                if (btnCell && btnCell.childNodes.length === 0) {
                     btnCell.appendChild(btn);
-                    btnCell.className = 'vt custom-action-button';
-                    row.insertBefore(btnCell, firstCell);
                 }
             });
         }
