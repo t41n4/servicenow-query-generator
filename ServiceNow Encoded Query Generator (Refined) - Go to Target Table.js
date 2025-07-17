@@ -161,6 +161,12 @@
                     background-color: #0056b3;
                 }
 
+                /* Highlighted element cell */
+                .snqg-highlight-element-cell {
+                    background-color: #ffe066 !important;
+                    transition: background-color 0.3s;
+                }
+
                 #elementKeywordPairsContainer {
                     flex-grow: 1; /* Allows this section to take available space */
                     display: flex;
@@ -347,8 +353,8 @@
             const allQueryParts = [];
             this.state.dynamicQueryRows.forEach(rowData => {
                 let field = rowData.element;
-                if (rowData.reference === 'Group') {
-                    field = 'group.name';
+                if (rowData.reference === 'Group' && field) {
+                    field = `${field}.name`;
                 }
                 const operator = rowData.operatorSelect.value;
                 const keywordsRaw = rowData.keywordsTextarea.value.trim();
@@ -407,6 +413,7 @@
             this.extractor = extractor;
             this.operators = operators;
             this.BULK_KEYWORDS_STORAGE_KEY = 'snQueryGeneratorBulkKeywords';
+            this.HIGHLIGHT_INPUT_STORAGE_KEY = 'snQueryGeneratorHighlightInput';
         }
 
         create() {
@@ -414,7 +421,8 @@
             container.id = 'queryGeneratorContainer';
             container.appendChild(this.createToggleButton());
             container.appendChild(this.createHeaderSection());
-            container.appendChild(this.createExtractElementsButton());
+            container.appendChild(this.createHighlightInputGroup()); // <-- Add highlight input
+            container.appendChild(this.createExtractButtonsGroup());
             container.appendChild(this.createElementKeywordPairsContainer());
             container.appendChild(this.createBulkKeywordsInputGroup());
             container.appendChild(this.createConjunctionSelectGroup());
@@ -425,12 +433,47 @@
             document.body.appendChild(container);
             this.bindUIEventListeners();
             this.loadBulkKeywords();
+            this.loadHighlightInput();
+            this.highlightElementCells(); // Auto-apply highlight on load
         }
 
         createHeaderSection() {
             const header = document.createElement('h3');
             header.textContent = 'Sys_Dictionary Query Builder';
             return header;
+        }
+        createHighlightInputGroup() {
+            const group = document.createElement('div');
+            group.className = 'input-group';
+            group.style.marginBottom = '0';
+            group.innerHTML = `
+                <label for="highlightInput">Highlight Elements (comma-separated, e.g. *group, *script, =admin, user):</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input id="highlightInput" type="text" placeholder="*group, *script, =admin, user" style="flex:1; padding: 8px; border-radius: 6px; border: 1px solid #dcdcdc; font-size: 13px;" />
+                  <button id="highlightBtn" style="background-color: #ffe066; color: #333; font-weight: bold; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer;">Highlight</button>
+                  <button id="clearHighlightBtn" style="background-color: #ccc; color: #333; font-weight: bold; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer;">Clear</button>
+                </div>
+            `;
+            return group;
+        }
+        createExtractButtonsGroup() {
+            const group = document.createElement('div');
+            group.style.display = 'flex';
+            group.style.flexDirection = 'column';
+            group.appendChild(this.createExtractElementsButton());
+            const extractHighlightedBtn = document.createElement('button');
+            extractHighlightedBtn.id = 'extractHighlightedElementsBtn';
+            extractHighlightedBtn.textContent = 'Extract Highlighted Elements Only';
+            extractHighlightedBtn.style.backgroundColor = '#ffe066';
+            extractHighlightedBtn.style.color = '#333';
+            extractHighlightedBtn.style.fontWeight = 'bold';
+            extractHighlightedBtn.style.border = 'none';
+            extractHighlightedBtn.style.borderRadius = '6px';
+            extractHighlightedBtn.style.padding = '10px 18px';
+            extractHighlightedBtn.style.cursor = 'pointer';
+            extractHighlightedBtn.style.fontSize = '14px';
+            group.appendChild(extractHighlightedBtn);
+            return group;
         }
         createExtractElementsButton() {
             const btn = document.createElement('button');
@@ -499,10 +542,16 @@
             document.getElementById('clearAllBtn').addEventListener('click', () => this.clearAll());
             document.getElementById('toggleQueryGenerator').addEventListener('click', () => this.toggleVisibility());
             document.getElementById('extractElementsBtn').addEventListener('click', () => this.extractElementsFromList());
+            document.getElementById('extractHighlightedElementsBtn').addEventListener('click', () => this.extractHighlightedElementsOnly());
             document.getElementById('applyBulkKeywordsBtn').addEventListener('click', () => this.applyBulkKeywords());
             const bulkKeywordsInput = document.getElementById('bulkKeywordsInput');
             bulkKeywordsInput.addEventListener('input', (e) => this.autoResizeTextarea(e));
             bulkKeywordsInput.addEventListener('input', () => this.saveBulkKeywords());
+            // Highlight listeners
+            document.getElementById('highlightBtn').addEventListener('click', () => this.highlightElementCells());
+            document.getElementById('clearHighlightBtn').addEventListener('click', () => this.clearHighlightElementCells());
+            const highlightInput = document.getElementById('highlightInput');
+            highlightInput.addEventListener('input', () => this.saveHighlightInput());
         }
 
         autoResizeTextarea(event) {
@@ -520,6 +569,15 @@
                 bulkKeywordsInput.value = savedKeywords;
                 this.autoResizeTextarea({ target: bulkKeywordsInput });
             }
+        }
+        saveHighlightInput() {
+            const highlightInput = document.getElementById('highlightInput');
+            localStorage.setItem(this.HIGHLIGHT_INPUT_STORAGE_KEY, highlightInput.value);
+        }
+        loadHighlightInput() {
+            const highlightInput = document.getElementById('highlightInput');
+            const saved = localStorage.getItem(this.HIGHLIGHT_INPUT_STORAGE_KEY);
+            if (saved) highlightInput.value = saved;
         }
         addKeywordConditionRow(elementData) {
             const container = document.getElementById('elementKeywordPairsContainer');
@@ -672,6 +730,24 @@
             this.injectAddToQueryBuilderButtons();
             this.observeTableChanges();
         }
+        extractHighlightedElementsOnly() {
+            this.clearAll(true);
+            // Find highlighted element cells
+            const highlightedCells = document.querySelectorAll('tbody.list2_body td.snqg-highlight-element-cell');
+            if (!highlightedCells.length) {
+                alert('No highlighted elements found.');
+                return;
+            }
+            // For each highlighted cell, get its row and extract data
+            const headerMap = getHeaderMap();
+            highlightedCells.forEach(cell => {
+                const row = cell.closest('tr');
+                if (row) {
+                    const data = mapRowToDataObject(row, headerMap);
+                    this.addKeywordConditionRow(data);
+                }
+            });
+        }
         applyBulkKeywords() {
             const bulkKeywordsRaw = document.getElementById('bulkKeywordsInput').value.trim();
             if (!bulkKeywordsRaw) {
@@ -743,6 +819,8 @@
                     btnCell.appendChild(btn);
                 }
             });
+            // Re-apply highlight after table/buttons injected
+            this.highlightElementCells();
         }
         observeTableChanges() {
             const tableBody = document.querySelector('tbody.list2_body');
@@ -750,9 +828,73 @@
             if (tableBody._addToQueryBuilderObserver) return;
             const observer = new MutationObserver(() => {
                 this.injectAddToQueryBuilderButtons();
+                this.highlightElementCells(); // Re-apply highlight on table change
             });
             observer.observe(tableBody, { childList: true, subtree: false });
             tableBody._addToQueryBuilderObserver = observer;
+        }
+        highlightElementCells() {
+            const input = document.getElementById('highlightInput').value.trim();
+            if (!input) return;
+            // Parse multiple criteria, separated by commas
+            const criteria = input.split(',').map(s => s.trim()).filter(Boolean).map(crit => {
+                let matchType = 'starts';
+                let value = crit;
+                if (crit.startsWith('*')) {
+                    matchType = 'contains';
+                    value = crit.slice(1);
+                } else if (crit.startsWith('=')) {
+                    matchType = 'exact';
+                    value = crit.slice(1);
+                }
+                return { matchType, value: value.trim().toLowerCase() };
+            });
+            // Find the 'element' column index
+            const headerMap = getHeaderMap();
+            const elementHeader = headerMap.find(h => h.canonicalKey === 'element');
+            if (!elementHeader) return;
+            const colIdx = elementHeader.idx;
+            // Highlight matching cells
+            const rows = document.querySelectorAll('tbody.list2_body tr.list_row');
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                let cellIdx = 0;
+                for (let i = 0; i < headerMap.length && cellIdx < cells.length; i++) {
+                    const h = headerMap[i];
+                    const cell = cells[cellIdx];
+                    if (cell.classList.contains('list_decoration_cell') || cell.classList.contains('custom-action-button')) {
+                        cellIdx++;
+                        continue;
+                    }
+                    if (i === colIdx) {
+                        const cellText = (cell.textContent || '').trim().toLowerCase();
+                        let match = false;
+                        for (const crit of criteria) {
+                            if (crit.matchType === 'contains' && cellText.includes(crit.value)) {
+                                match = true;
+                                break;
+                            } else if (crit.matchType === 'exact' && cellText === crit.value) {
+                                match = true;
+                                break;
+                            } else if (crit.matchType === 'starts' && cellText.startsWith(crit.value)) {
+                                match = true;
+                                break;
+                            }
+                        }
+                        if (match) {
+                            cell.classList.add('snqg-highlight-element-cell');
+                        } else {
+                            cell.classList.remove('snqg-highlight-element-cell');
+                        }
+                        break;
+                    }
+                    cellIdx++;
+                }
+            });
+        }
+        clearHighlightElementCells() {
+            const highlighted = document.querySelectorAll('.snqg-highlight-element-cell');
+            highlighted.forEach(cell => cell.classList.remove('snqg-highlight-element-cell'));
         }
     }
 
