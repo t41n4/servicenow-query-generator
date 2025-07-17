@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ServiceNow Encoded Query Builder for Dictionary Table
+// @name         ServiceNow Encoded Query Builder for Dictionary
 // @namespace    http://tampermonkey.net/
-// @version      1.17 // Refactored for SOLID principles
+// @version      1.17
 // @description  Generate ServiceNow encoded queries with per-element control, bulk input (now persistent across extracts), and direct navigation to the target table.
 // @author       t41n4
 // @match        https://*.service-now.com/sys_dictionary_list*
